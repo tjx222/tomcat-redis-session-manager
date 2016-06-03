@@ -1,11 +1,18 @@
 package com.orangefunction.tomcat.redissessions;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.Serializable;
 
 
 public class SessionSerializationMetadata implements Serializable {
 
-  private byte[] sessionAttributesHash;
+  /**
+	 * <pre>
+	 *
+	 * </pre>
+	 */
+	private static final long serialVersionUID = 4817120933319990092L;
+private byte[] sessionAttributesHash;
 
   public SessionSerializationMetadata() {
     this.sessionAttributesHash = new byte[0];
@@ -33,10 +40,6 @@ public class SessionSerializationMetadata implements Serializable {
     byte[] sessionAttributesHash = new byte[hashLength];
     in.read(sessionAttributesHash, 0, hashLength);
     this.sessionAttributesHash = sessionAttributesHash;
-  }
-
-  private void readObjectNoData() throws ObjectStreamException {
-    this.sessionAttributesHash = new byte[0];
   }
 
 }

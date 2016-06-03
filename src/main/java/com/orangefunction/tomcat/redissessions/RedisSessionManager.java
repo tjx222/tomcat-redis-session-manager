@@ -1,36 +1,32 @@
 package com.orangefunction.tomcat.redissessions;
 
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
+
+import org.apache.catalina.Context;
 import org.apache.catalina.Lifecycle;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleListener;
-import org.apache.catalina.util.LifecycleSupport;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Loader;
-import org.apache.catalina.Valve;
 import org.apache.catalina.Session;
+import org.apache.catalina.Valve;
 import org.apache.catalina.session.ManagerBase;
-
-import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
-import org.apache.commons.pool2.impl.BaseObjectPoolConfig;
-
-import redis.clients.util.Pool;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisSentinelPool;
-import redis.clients.jedis.JedisPoolConfig;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.Protocol;
-
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.Set;
-import java.util.EnumSet;
-import java.util.HashSet;
-import java.util.Iterator;
-
+import org.apache.catalina.util.LifecycleSupport;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.JedisSentinelPool;
+import redis.clients.jedis.Protocol;
+import redis.clients.util.Pool;
 
 
 public class RedisSessionManager extends ManagerBase implements Lifecycle {
@@ -209,7 +205,8 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     return jedis;
   }
 
-  protected void returnConnection(Jedis jedis, Boolean error) {
+  @SuppressWarnings("deprecation")
+protected void returnConnection(Jedis jedis, Boolean error) {
     if (error) {
       connectionPool.returnBrokenResource(jedis);
     } else {
@@ -301,8 +298,6 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     log.info("Will expire sessions after " + getMaxInactiveInterval() + " seconds");
 
     initializeDatabaseConnection();
-
-    setDistributable(true);
   }
 
 
@@ -394,6 +389,31 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     }
 
     return session;
+  }
+  
+  @Override
+  public void changeSessionId(Session session) {
+	  if (null == session || session.getIdInternal() == null) {
+	      return;
+	  }
+      String oldId = session.getIdInternal();
+      Jedis jedis = null;
+      Boolean error = true;
+      String newId = null;
+      
+      try {
+        jedis = acquireConnection();
+        do {
+        	newId = sessionIdWithJvmRoute(generateSessionId(), getJvmRoute());
+         } while (jedis.renamenx(oldId, newId) == 0L);
+        session.setId(newId, false);
+        container.fireContainerEvent(Context.CHANGE_SESSION_ID_EVENT,
+                new String[] {oldId, newId});
+      } finally {
+          if (jedis != null) {
+              returnConnection(jedis, error);
+            }
+      }
   }
 
   private String sessionIdWithJvmRoute(String sessionId, String jvmRoute) {
@@ -542,7 +562,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
 
       if (log.isTraceEnabled()) {
         log.trace("Session Contents [" + id + "]:");
-        Enumeration en = session.getAttributeNames();
+        Enumeration<?> en = session.getAttributeNames();
         while(en.hasMoreElements()) {
           log.trace("  " + en.nextElement());
         }
@@ -585,7 +605,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
 
       if (log.isTraceEnabled()) {
         log.trace("Session Contents [" + redisSession.getId() + "]:");
-        Enumeration en = redisSession.getAttributeNames();
+        Enumeration<?> en = redisSession.getAttributeNames();
         while(en.hasMoreElements()) {
           log.trace("  " + en.nextElement());
         }
@@ -631,10 +651,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
       return error;
     } catch (IOException e) {
       log.error(e.getMessage());
-
       throw e;
-    } finally {
-      return error;
     }
   }
 
@@ -642,7 +659,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
   public void remove(Session session) {
     remove(session, false);
   }
-
+  
   @Override
   public void remove(Session session, boolean update) {
     Jedis jedis = null;
@@ -668,10 +685,10 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         if (redisSession.isValid()) {
           log.trace("Request with session completed, saving session " + redisSession.getId());
           save(redisSession, getAlwaysSaveAfterRequest());
-        } else {
-          log.trace("HTTP Session has been invalidated, removing :" + redisSession.getId());
-          remove(redisSession);
-        }
+        }else {
+            log.trace("HTTP Session has been invalidated, removing :" + redisSession.getId());
+            remove(redisSession);
+          }
       } catch (Exception e) {
         log.error("Error storing/removing session", e);
       } finally {
@@ -686,7 +703,6 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
   @Override
   public void processExpires() {
     // We are going to use Redis's ability to expire keys for session expiration.
-
     // Do nothing.
   }
 

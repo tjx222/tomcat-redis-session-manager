@@ -1,18 +1,25 @@
 package com.orangefunction.tomcat.redissessions;
 
+import java.io.IOException;
 import java.security.Principal;
+import java.util.HashMap;
+
 import org.apache.catalina.Manager;
 import org.apache.catalina.session.StandardSession;
-import java.util.HashMap;
-import java.io.IOException;
-
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
 
 public class RedisSession extends StandardSession {
 
-  private final Log log = LogFactory.getLog(RedisSession.class);
+  /**
+	 * <pre>
+	 *
+	 * </pre>
+	 */
+private static final long serialVersionUID = 4187854774384971447L;
+
+private final Log log = LogFactory.getLog(RedisSession.class);
 
   protected static Boolean manualDirtyTrackingSupportEnabled = false;
 
