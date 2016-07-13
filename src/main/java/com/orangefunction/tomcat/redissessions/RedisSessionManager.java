@@ -11,13 +11,11 @@ import java.util.Set;
 import org.apache.catalina.Context;
 import org.apache.catalina.Lifecycle;
 import org.apache.catalina.LifecycleException;
-import org.apache.catalina.LifecycleListener;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Loader;
 import org.apache.catalina.Session;
 import org.apache.catalina.Valve;
 import org.apache.catalina.session.ManagerBase;
-import org.apache.catalina.util.LifecycleSupport;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
@@ -73,55 +71,6 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
   protected String serializationStrategyClass = "com.orangefunction.tomcat.redissessions.JavaSerializer";
 
   protected EnumSet<SessionPersistPolicy> sessionPersistPoliciesSet = EnumSet.of(SessionPersistPolicy.DEFAULT);
-
-  /**
-   * The lifecycle event support for this component.
-   */
-  protected LifecycleSupport lifecycle = new LifecycleSupport(this);
-
-  public String getHost() {
-    return host;
-  }
-
-  public void setHost(String host) {
-    this.host = host;
-  }
-
-  public int getPort() {
-    return port;
-  }
-
-  public void setPort(int port) {
-    this.port = port;
-  }
-
-  public int getDatabase() {
-    return database;
-  }
-
-  public void setDatabase(int database) {
-    this.database = database;
-  }
-
-  public int getTimeout() {
-    return timeout;
-  }
-
-  public void setTimeout(int timeout) {
-    this.timeout = timeout;
-  }
-
-  public String getPassword() {
-    return password;
-  }
-
-  public void setPassword(String password) {
-    this.password = password;
-  }
-
-  public void setSerializationStrategyClass(String strategy) {
-    this.serializationStrategyClass = strategy;
-  }
 
   public String getSessionPersistPolicies() {
     StringBuilder policies = new StringBuilder();
@@ -197,7 +146,6 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
 
   protected Jedis acquireConnection() {
     Jedis jedis = connectionPool.getResource();
-
     if (getDatabase() != 0) {
       jedis.select(getDatabase());
     }
@@ -205,12 +153,9 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     return jedis;
   }
 
-  @SuppressWarnings("deprecation")
 protected void returnConnection(Jedis jedis, Boolean error) {
     if (error) {
-      connectionPool.returnBrokenResource(jedis);
-    } else {
-      connectionPool.returnResource(jedis);
+    	jedis.close();
     }
   }
 
@@ -226,36 +171,6 @@ protected void returnConnection(Jedis jedis, Boolean error) {
   @Override
   public void unload() throws IOException {
 
-  }
-
-  /**
-   * Add a lifecycle event listener to this component.
-   *
-   * @param listener The listener to add
-   */
-  @Override
-  public void addLifecycleListener(LifecycleListener listener) {
-    lifecycle.addLifecycleListener(listener);
-  }
-
-  /**
-   * Get the lifecycle listeners associated with this lifecycle. If this
-   * Lifecycle has no listeners registered, a zero-length array is returned.
-   */
-  @Override
-  public LifecycleListener[] findLifecycleListeners() {
-    return lifecycle.findLifecycleListeners();
-  }
-
-
-  /**
-   * Remove a lifecycle event listener from this component.
-   *
-   * @param listener The listener to remove
-   */
-  @Override
-  public void removeLifecycleListener(LifecycleListener listener) {
-    lifecycle.removeLifecycleListener(listener);
   }
 
   /**
@@ -451,20 +366,20 @@ protected void returnConnection(Jedis jedis, Boolean error) {
     } else if (id.equals(currentSessionId.get())) {
       session = currentSession.get();
     } else {
-      byte[] data = loadSessionDataFromRedis(id);
-      if (data != null) {
-        DeserializedSessionContainer container = sessionFromSerializedData(id, data);
-        session = container.session;
-        currentSession.set(session);
-        currentSessionSerializationMetadata.set(container.metadata);
-        currentSessionIsPersisted.set(true);
-        currentSessionId.set(id);
-      } else {
-        currentSessionIsPersisted.set(false);
-        currentSession.set(null);
-        currentSessionSerializationMetadata.set(null);
-        currentSessionId.set(null);
-      }
+      	       byte[] data = loadSessionDataFromRedis(id);
+      	       if (data != null) {
+      	         DeserializedSessionContainer container = sessionFromSerializedData(id, data);
+      	         session = container.session;
+      	         currentSession.set(session);
+      	         currentSessionSerializationMetadata.set(container.metadata);
+      	         currentSessionIsPersisted.set(true);
+      	         currentSessionId.set(id);
+      	       } else {
+      	         currentSessionIsPersisted.set(false);
+      	         currentSession.set(null);
+      	         currentSessionSerializationMetadata.set(null);
+      	         currentSessionId.set(null);
+      	       }
     }
 
     return session;
@@ -499,20 +414,6 @@ protected void returnConnection(Jedis jedis, Boolean error) {
     }
   }
 
-  public String[] keys() throws IOException {
-    Jedis jedis = null;
-    Boolean error = true;
-    try {
-      jedis = acquireConnection();
-      Set<String> keySet = jedis.keys("*");
-      error = false;
-      return keySet.toArray(new String[keySet.size()]);
-    } finally {
-      if (jedis != null) {
-        returnConnection(jedis, error);
-      }
-    }
-  }
 
   public byte[] loadSessionDataFromRedis(String id) throws IOException {
     Jedis jedis = null;
@@ -612,6 +513,9 @@ protected void returnConnection(Jedis jedis, Boolean error) {
       }
 
       byte[] binaryId = redisSession.getId().getBytes();
+      
+      log.trace("Setting expire timeout on session [" + redisSession.getId() + "] to " + getMaxInactiveInterval());
+      jedis.expire(binaryId, getMaxInactiveInterval());
 
       Boolean isCurrentSessionPersisted;
       SessionSerializationMetadata sessionSerializationMetadata = currentSessionSerializationMetadata.get();
@@ -624,30 +528,20 @@ protected void returnConnection(Jedis jedis, Boolean error) {
             || !isCurrentSessionPersisted
            || !Arrays.equals(originalSessionAttributesHash, (sessionAttributesHash = serializer.attributesHashFrom(redisSession)))
          ) {
-
-        log.trace("Save was determined to be necessary");
-
-        if (null == sessionAttributesHash) {
-          sessionAttributesHash = serializer.attributesHashFrom(redisSession);
-        }
-
-        SessionSerializationMetadata updatedSerializationMetadata = new SessionSerializationMetadata();
-        updatedSerializationMetadata.setSessionAttributesHash(sessionAttributesHash);
-
-        jedis.set(binaryId, serializer.serializeFrom(redisSession, updatedSerializationMetadata));
-
-        redisSession.resetDirtyTracking();
-        currentSessionSerializationMetadata.set(updatedSerializationMetadata);
-        currentSessionIsPersisted.set(true);
+	        log.trace("Save was determined to be necessary");
+	        if (null == sessionAttributesHash) {
+	          sessionAttributesHash = serializer.attributesHashFrom(redisSession);
+	        }
+	        SessionSerializationMetadata updatedSerializationMetadata = new SessionSerializationMetadata();
+	        updatedSerializationMetadata.setSessionAttributesHash(sessionAttributesHash);
+	        jedis.set(binaryId, serializer.serializeFrom(redisSession, updatedSerializationMetadata));
+	        redisSession.resetDirtyTracking();
+	        currentSessionSerializationMetadata.set(updatedSerializationMetadata);
+	        currentSessionIsPersisted.set(true);
       } else {
         log.trace("Save was determined to be unnecessary");
       }
-
-      log.trace("Setting expire timeout on session [" + redisSession.getId() + "] to " + getMaxInactiveInterval());
-      jedis.expire(binaryId, getMaxInactiveInterval());
-
       error = false;
-
       return error;
     } catch (IOException e) {
       log.error(e.getMessage());
@@ -655,11 +549,6 @@ protected void returnConnection(Jedis jedis, Boolean error) {
     }
   }
 
-  @Override
-  public void remove(Session session) {
-    remove(session, false);
-  }
-  
   @Override
   public void remove(Session session, boolean update) {
     Jedis jedis = null;
@@ -770,6 +659,50 @@ protected void returnConnection(Jedis jedis, Boolean error) {
   public void setConnectionPoolMinIdle(int connectionPoolMinIdle) {
     this.connectionPoolConfig.setMinIdle(connectionPoolMinIdle);
   }
+
+  public String getHost() {
+	    return host;
+	  }
+
+	  public void setHost(String host) {
+	    this.host = host;
+	  }
+
+	  public int getPort() {
+	    return port;
+	  }
+
+	  public void setPort(int port) {
+	    this.port = port;
+	  }
+
+	  public int getDatabase() {
+	    return database;
+	  }
+
+	  public void setDatabase(int database) {
+	    this.database = database;
+	  }
+
+	  public int getTimeout() {
+	    return timeout;
+	  }
+
+	  public void setTimeout(int timeout) {
+	    this.timeout = timeout;
+	  }
+
+	  public String getPassword() {
+	    return password;
+	  }
+
+	  public void setPassword(String password) {
+	    this.password = password;
+	  }
+
+	  public void setSerializationStrategyClass(String strategy) {
+	    this.serializationStrategyClass = strategy;
+	  }
 
 
   // - from org.apache.commons.pool2.impl.BaseObjectPoolConfig
