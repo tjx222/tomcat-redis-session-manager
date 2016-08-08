@@ -11,7 +11,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Enumeration;
 import java.util.HashMap;
-
 import org.apache.catalina.util.CustomObjectInputStream;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -80,6 +79,34 @@ public byte[] attributesHashFrom(RedisSession session) throws IOException {
       SessionSerializationMetadata serializedMetadata = (SessionSerializationMetadata)ois.readObject();
       metadata.copyFieldsFrom(serializedMetadata);
       session.readObjectData(ois);
+     /* // Deserialize the scalar instance variables (except Manager)
+      Long  creationTime = ((Long) ois.readObject()).longValue();
+      Long lastAccessedTime = ((Long) ois.readObject()).longValue();
+      Integer maxInactiveInterval = ((Integer) ois.readObject()).intValue();
+      Boolean isNew = ((Boolean) ois.readObject()).booleanValue();
+      Boolean isValid = ((Boolean) ois.readObject()).booleanValue();
+      Long thisAccessedTime = ((Long) ois.readObject()).longValue();
+      //        setId((String) stream.readObject());
+      String id = (String) ois.readObject();
+
+      // Deserialize the attribute count and attribute values
+      Map<String,Object> attributes = new ConcurrentHashMap<String, Object>();
+      int n = ((Integer) ois.readObject()).intValue();
+      boolean isValidSave = isValid;
+      isValid = true;
+      for (int i = 0; i < n; i++) {
+          String name = (String) ois.readObject();
+          final Object value;
+          try {
+              value = ois.readObject();
+          } catch (WriteAbortedException wae) {
+              if (wae.getCause() instanceof NotSerializableException) {
+                  // Skip non serializable attributes
+                  continue;
+              }
+              throw wae;
+          }
+      }*/
     }
   }
 }
